@@ -1,10 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SamsungTVService {
   WebSocket? _socket;
   bool _isConnected = false;
+  String? _token;
+  String? _currentHost;
+  Completer<bool>? _connectCompleter;
 
   Function(bool)? onConnectionChanged;
   Function(String)? onError;
@@ -12,53 +17,97 @@ class SamsungTVService {
   bool get isConnected => _isConnected;
 
   Future<bool> connect(String host) async {
+    _currentHost = host;
     try {
-      final appName = base64Url.encode(utf8.encode('Samsung Remote'));
-      final uri = 'wss://$host:8002/api/v2/channels/samsung.remote.control?name=$appName';
+      final prefs = await SharedPreferences.getInstance();
+      _token = prefs.getString('tv_token_$host');
 
-      final ctx = SecurityContext.defaultContext;
-      _socket = await WebSocket.connect(uri).timeout(const Duration(seconds: 10));
+      final appName = base64Url.encode(utf8.encode('Samsung Remote'));
+      var uriStr = 'wss://$host:8002/api/v2/channels/samsung.remote.control?name=$appName';
+      if (_token != null) uriStr += '&token=$_token';
+
+      final success = await _tryConnect(Uri.parse(uriStr), timeout: 20);
+      if (success) return true;
+
+      // Fallback to port 8001 if 8002 fails
+      debugPrint('WSS failed, trying WS fallback...');
+      var fallbackUri = 'ws://$host:8001/api/v2/channels/samsung.remote.control?name=$appName';
+      if (_token != null) fallbackUri += '&token=$_token';
+      
+      return await _tryConnect(Uri.parse(fallbackUri), timeout: 10);
+    } catch (e) {
+      debugPrint('Connection failed: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _tryConnect(Uri uri, {int timeout = 20}) async {
+    try {
+      _socket?.close();
+      _connectCompleter = Completer<bool>();
+      
+      final client = HttpClient()
+        ..badCertificateCallback = (cert, host, port) => true
+        ..connectionTimeout = const Duration(seconds: 5);
+
+      final request = await client.openUrl('GET', uri);
+      request.headers.set('Connection', 'Upgrade');
+      request.headers.set('Upgrade', 'websocket');
+      request.headers.set('sec-websocket-version', '13');
+      request.headers.set('sec-websocket-key', base64.encode(List<int>.generate(16, (_) => 0)));
+
+      final response = await request.close();
+      final socket = await response.detachSocket();
+      _socket = WebSocket.fromUpgradedSocket(socket, serverSide: false);
 
       _socket!.listen(
         _onData,
         onDone: _onDisconnected,
         onError: (e) {
-          _isConnected = false;
-          onConnectionChanged?.call(false);
+          debugPrint('WS Error: $e');
+          _onDisconnected();
+          if (_connectCompleter?.isCompleted == false) _connectCompleter?.complete(false);
         },
       );
 
-      _isConnected = true;
-      onConnectionChanged?.call(true);
-      return true;
-    } catch (e) {
-      // جرب HTTP بدل HTTPS
-      try {
-        final appName = base64Url.encode(utf8.encode('Samsung Remote'));
-        final uri = 'ws://$host:8001/api/v2/channels/samsung.remote.control?name=$appName';
-        _socket = await WebSocket.connect(uri).timeout(const Duration(seconds: 10));
-        _socket!.listen(_onData, onDone: _onDisconnected, onError: (_) {
-          _isConnected = false;
-          onConnectionChanged?.call(false);
-        });
+      final success = await _connectCompleter!.future.timeout(
+        Duration(seconds: timeout),
+        onTimeout: () => false,
+      );
+
+      if (success) {
         _isConnected = true;
         onConnectionChanged?.call(true);
         return true;
-      } catch (e2) {
-        onError?.call(e2.toString());
-        return false;
       }
+      return false;
+    } catch (e) {
+      debugPrint('TryConnect Error: $e');
+      return false;
     }
   }
 
   void _onData(dynamic data) {
     try {
       final json = jsonDecode(data);
+      debugPrint('TV Data: $json');
+      
       if (json['event'] == 'ms.channel.connect') {
-        _isConnected = true;
-        onConnectionChanged?.call(true);
+        final dataMap = json['data'];
+        if (dataMap != null && dataMap['token'] != null) {
+          _token = dataMap['token'];
+          _saveToken();
+        }
+        if (_connectCompleter?.isCompleted == false) _connectCompleter?.complete(true);
       }
     } catch (_) {}
+  }
+
+  Future<void> _saveToken() async {
+    if (_token != null && _currentHost != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('tv_token_$_currentHost', _token!);
+    }
   }
 
   void _onDisconnected() {

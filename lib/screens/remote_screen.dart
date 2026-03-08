@@ -222,10 +222,35 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   Future<void> _connectTo(String ip) async {
     setState(() { _connectedIP = ip; });
+    
+    // Show a dialog telling the user to check the TV
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _card,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: _blue),
+            const SizedBox(height: 20),
+            const Text('Connecting to TV...', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            Text('Please check your TV for a permission prompt and select "Allow".', 
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[400], fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+
     final ok = await _tv.connect(ip);
+    
+    if (mounted) Navigator.pop(context); // Close connecting dialog
+
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to connect to $ip'), backgroundColor: Colors.red),
+        SnackBar(content: Text('Failed to connect to $ip. Make sure you accepted the prompt on TV.'), backgroundColor: Colors.red),
       );
     }
   }
