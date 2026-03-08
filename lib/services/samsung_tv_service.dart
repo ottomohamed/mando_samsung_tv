@@ -46,9 +46,9 @@ class SamsungTVService {
       _socket?.close();
       _connectCompleter = Completer<bool>();
       
-      final client = HttpClient()
-        ..badCertificateCallback = (cert, host, port) => true
-        ..connectionTimeout = const Duration(seconds: 5);
+      final client = HttpClient();
+      client.badCertificateCallback = (cert, host, port) => true;
+      client.connectionTimeout = const Duration(seconds: 5);
 
       final request = await client.openUrl('GET', uri);
       request.headers.set('Connection', 'Upgrade');

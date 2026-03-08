@@ -14,9 +14,6 @@ class RemoteScreen extends StatefulWidget {
 class _RemoteScreenState extends State<RemoteScreen> {
   final SamsungTVService _tv = SamsungTVService();
   bool _connected = false;
-  bool _scanning = false;
-  List<String> _foundTVs = [];
-  String _connectedIP = '';
   final String _connectedName = 'Living Room TV';
 
   // --- Ads Variables ---
@@ -221,8 +218,6 @@ class _RemoteScreenState extends State<RemoteScreen> {
   }
 
   Future<void> _connectTo(String ip) async {
-    setState(() { _connectedIP = ip; });
-    
     // Show a dialog telling the user to check the TV
     showDialog(
       context: context,
@@ -309,10 +304,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
             duration: const Duration(milliseconds: 300),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             decoration: BoxDecoration(
-              color: (_connected ? _blue : Colors.grey).withOpacity(0.12),
+              color: (_connected ? _blue : Colors.grey).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(100),
               border: Border.all(
-                color: (_connected ? _blue : Colors.grey).withOpacity(0.3),
+                color: (_connected ? _blue : Colors.grey).withValues(alpha: 0.3),
               ),
             ),
             child: Row(
@@ -408,7 +403,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
           Container(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _card.withOpacity(0.3),
+              color: _card.withValues(alpha: 0.3),
               border: Border.all(color: _border, width: 3),
             ),
           ),
@@ -469,7 +464,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
               shape: BoxShape.circle,
               color: _card,
               border: Border.all(color: _border),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 12)],
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 12)],
             ),
             child: const Icon(Icons.mic, color: _blue, size: 28),
           ),
@@ -523,7 +518,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(12),
-          boxShadow: [BoxShadow(color: bg.withOpacity(0.3), blurRadius: 8)],
+          boxShadow: [BoxShadow(color: bg.withValues(alpha: 0.3), blurRadius: 8)],
         ),
         child: Center(
           child: Text(label, style: TextStyle(color: text, fontWeight: FontWeight.bold, fontSize: 13)),
@@ -556,7 +551,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   Widget _buildBottomNav() {
     return Container(
       decoration: BoxDecoration(
-        color: _bg.withOpacity(0.9),
+        color: _bg.withValues(alpha: 0.9),
         border: const Border(top: BorderSide(color: _border)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
