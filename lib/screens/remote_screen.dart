@@ -1,6 +1,7 @@
-import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../services/samsung_tv_service.dart';
 
 class RemoteScreen extends StatefulWidget {
@@ -16,7 +17,18 @@ class _RemoteScreenState extends State<RemoteScreen> {
   bool _scanning = false;
   List<String> _foundTVs = [];
   String _connectedIP = '';
-  String _connectedName = 'Living Room TV';
+  final String _connectedName = 'Living Room TV';
+
+  // --- Ads Variables ---
+  BannerAd? _bannerAd;
+  bool _isAdLoaded = false;
+  
+  InterstitialAd? _interstitialAd;
+  int _clickCount = 0;
+  
+  RewardedAd? _rewardedAd;
+  bool _isRewardedAdLoaded = false;
+  // ---------------------
 
   static const _bg = Color(0xFF101722);
   static const _card = Color(0xFF1a2235);
@@ -27,10 +39,121 @@ class _RemoteScreenState extends State<RemoteScreen> {
   void initState() {
     super.initState();
     _tv.onConnectionChanged = (v) => setState(() => _connected = v);
+    _loadAd();
+  }
+
+  void _loadAd() {
+    // Banner Ad
+    final bannerId = Platform.isAndroid
+        ? 'ca-app-pub-6500154299593172/1589134287' 
+        : 'ca-app-pub-6500154299593172/1589134287';
+
+    _bannerAd = BannerAd(
+      adUnitId: bannerId,
+      request: const AdRequest(),
+      size: AdSize.banner,
+      listener: BannerAdListener(
+        onAdLoaded: (ad) => setState(() => _isAdLoaded = true),
+        onAdFailedToLoad: (ad, err) {
+          debugPrint('BannerAd failed: $err');
+          ad.dispose();
+        },
+      ),
+    )..load();
+
+    _loadInterstitialAd();
+    _loadRewardedAd();
+  }
+
+  void _loadInterstitialAd() {
+    final interstitialId = Platform.isAndroid
+        ? 'ca-app-pub-6500154299593172/4291173456'
+        : 'ca-app-pub-6500154299593172/4291173456';
+
+    InterstitialAd.load(
+      adUnitId: interstitialId,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          _interstitialAd = ad;
+          _setupInterstitialCallbacks();
+        },
+        onAdFailedToLoad: (err) => debugPrint('Interstitial failed: $err'),
+      ),
+    );
+  }
+
+  void _setupInterstitialCallbacks() {
+    _interstitialAd?.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (ad) {
+        ad.dispose();
+        _loadInterstitialAd(); // Load the next one
+      },
+      onAdFailedToShowFullScreenContent: (ad, err) {
+        ad.dispose();
+        _loadInterstitialAd();
+      },
+    );
+  }
+
+  void _loadRewardedAd() {
+    final rewardedId = Platform.isAndroid
+        ? 'ca-app-pub-6500154299593172/2597596640'
+        : 'ca-app-pub-6500154299593172/2597596640';
+
+    RewardedAd.load(
+      adUnitId: rewardedId,
+      request: const AdRequest(),
+      rewardedAdLoadCallback: RewardedAdLoadCallback(
+        onAdLoaded: (ad) {
+          setState(() => _isRewardedAdLoaded = true);
+          _rewardedAd = ad;
+          _rewardedAd?.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (ad) {
+              setState(() => _isRewardedAdLoaded = false);
+              ad.dispose();
+              _loadRewardedAd();
+            },
+            onAdFailedToShowFullScreenContent: (ad, err) {
+              setState(() => _isRewardedAdLoaded = false);
+              ad.dispose();
+              _loadRewardedAd();
+            },
+          );
+        },
+        onAdFailedToLoad: (err) => debugPrint('Rewarded failed: $err'),
+      ),
+    );
+  }
+
+  void _showInterstitialIfReady() {
+    _clickCount++;
+    if (_clickCount >= 10 && _interstitialAd != null) {
+      _interstitialAd!.show();
+      _interstitialAd = null;
+      _clickCount = 0;
+    }
+  }
+
+  void _showRewardedAd() {
+    if (_isRewardedAdLoaded && _rewardedAd != null) {
+      _rewardedAd!.show(onUserEarnedReward: (AdWithoutView ad, RewardItem reward) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Thank you for supporting the developer! ❤️')),
+          );
+        }
+      });
+      _rewardedAd = null;
+      setState(() => _isRewardedAdLoaded = false);
+    }
   }
 
   @override
   void dispose() {
+    _bannerAd?.dispose();
+    _interstitialAd?.dispose();
+    _rewardedAd?.dispose();
     _tv.disconnect();
     super.dispose();
   }
@@ -39,8 +162,11 @@ class _RemoteScreenState extends State<RemoteScreen> {
     setState(() { _scanning = true; _foundTVs = []; });
     final tvs = await SamsungTVService.scanForTVs();
     setState(() { _scanning = false; _foundTVs = tvs; });
-    if (tvs.isNotEmpty) _showTVList(tvs);
-    else _showManualIP();
+    if (tvs.isNotEmpty) {
+      _showTVList(tvs);
+    } else {
+      _showManualIP();
+    }
   }
 
   void _showTVList(List<String> tvs) {
@@ -104,9 +230,14 @@ class _RemoteScreenState extends State<RemoteScreen> {
     }
   }
 
-  void _key(String key) {
+  void _key(String key, {bool isSafeBtn = false}) {
     HapticFeedback.lightImpact();
     _tv.sendKey(key);
+    
+    // Only count non-critical buttons for ads to avoid being annoying
+    if (isSafeBtn) {
+      _showInterstitialIfReady();
+    }
   }
 
   @override
@@ -181,12 +312,12 @@ class _RemoteScreenState extends State<RemoteScreen> {
             children: [
               _iconBtn(Icons.menu, () => _scan()),
               const Expanded(
-                child: Text('Samsung Smart TV',
+                child: Text('Mando Smart TV',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
-              _iconBtn(Icons.power_settings_new, () => _key('KEY_POWER')),
+              _iconBtn(Icons.power_settings_new, () => _key('KEY_POWER', isSafeBtn: true)),
             ],
           ),
         ],
@@ -222,7 +353,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   Widget _navBtn(IconData icon, String label, String key) {
     return GestureDetector(
-      onTap: () => _key(key),
+      onTap: () => _key(key, isSafeBtn: true),
       child: Column(
         children: [
           Container(
@@ -361,7 +492,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   Widget _streamBtn(String label, Color bg, Color text, String key) {
     return GestureDetector(
-      onTap: () => _key(key),
+      onTap: () => _key(key, isSafeBtn: true),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
@@ -377,18 +508,22 @@ class _RemoteScreenState extends State<RemoteScreen> {
   }
 
   Widget _buildAdBanner() {
+    if (_isAdLoaded && _bannerAd != null) {
+      return Container(
+        width: _bannerAd!.size.width.toDouble(),
+        height: _bannerAd!.size.height.toDouble(),
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        child: AdWidget(ad: _bannerAd!),
+      );
+    }
+    
     return Container(
       width: double.infinity,
+      height: 50,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
         color: _card.withOpacity(0.2),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _border.withOpacity(0.5), style: BorderStyle.solid),
-      ),
-      child: Center(
-        child: Text('Sponsored Content',
-          style: TextStyle(color: Colors.grey[600], fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
       ),
     );
   }
@@ -397,14 +532,23 @@ class _RemoteScreenState extends State<RemoteScreen> {
     return Container(
       decoration: BoxDecoration(
         color: _bg.withOpacity(0.9),
-        border: Border(top: BorderSide(color: _border)),
+        border: const Border(top: BorderSide(color: _border)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _bottomNavItem(Icons.settings_remote, 'Remote', true),
-          _bottomNavItem(Icons.grid_view, 'Apps', false),
+          
+          // Support Developer Button (Rewarded Ad trigger)
+          if (_isRewardedAdLoaded)
+            GestureDetector(
+              onTap: _showRewardedAd,
+              child: _bottomNavItem(Icons.favorite, 'Support dev', false, color: Colors.pinkAccent),
+            )
+          else 
+            _bottomNavItem(Icons.grid_view, 'Apps', false),
+
           _bottomNavItem(Icons.search, 'Search', false),
           _bottomNavItem(Icons.keyboard, 'Input', false),
         ],
@@ -412,13 +556,14 @@ class _RemoteScreenState extends State<RemoteScreen> {
     );
   }
 
-  Widget _bottomNavItem(IconData icon, String label, bool active) {
+  Widget _bottomNavItem(IconData icon, String label, bool active, {Color? color}) {
+    final itemColor = color ?? (active ? _blue : Colors.grey[500]);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: active ? _blue : Colors.grey[500], size: 22),
+        Icon(icon, color: itemColor, size: 22),
         const SizedBox(height: 2),
-        Text(label, style: TextStyle(color: active ? _blue : Colors.grey[500], fontSize: 10, fontWeight: FontWeight.w500)),
+        Text(label, style: TextStyle(color: itemColor, fontSize: 10, fontWeight: FontWeight.w500)),
       ],
     );
   }

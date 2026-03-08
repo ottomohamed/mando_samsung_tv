@@ -1,4 +1,4 @@
-package com.pyramic.mando_samsung_tv
+package com.pyramic.samsungsmarttv
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -4,6 +4,8 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-6500154299593172~9711166886</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -65,6 +67,12 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>This app needs to discover Samsung Smart TVs on your local Wi-Fi network to use them as a remote.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_samsung.remote.control._tcp</string>
+		<string>_http._tcp</string>
 	</array>
 </dict>
 </plist>

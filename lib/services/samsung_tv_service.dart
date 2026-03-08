@@ -94,13 +94,21 @@ class SamsungTVService {
             final parts = addr.address.split('.');
             if (parts.length == 4) {
               final subnet = '${parts[0]}.${parts[1]}.${parts[2]}';
-              final futures = <Future>[];
-              for (int i = 1; i <= 254; i++) {
-                final ip = '$subnet.$i';
-                futures.add(_checkPort(ip, 8002).then((ok) { if (ok) found.add(ip); }));
-                futures.add(_checkPort(ip, 8001).then((ok) { if (ok && !found.contains(ip)) found.add(ip); }));
+              
+              const batchSize = 40;
+              for (int i = 1; i <= 254; i += batchSize) {
+                final futures = <Future>[];
+                for (int j = 0; j < batchSize && (i + j) <= 254; j++) {
+                  final ip = '$subnet.${i + j}';
+                  futures.add(_checkPort(ip, 8002).then((ok) { 
+                    if (ok) found.add(ip); 
+                  }));
+                  futures.add(_checkPort(ip, 8001).then((ok) { 
+                    if (ok && !found.contains(ip)) found.add(ip); 
+                  }));
+                }
+                await Future.wait(futures);
               }
-              await Future.wait(futures);
             }
           }
         }
