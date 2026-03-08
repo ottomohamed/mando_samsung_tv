@@ -14,6 +14,8 @@ class RemoteScreen extends StatefulWidget {
 class _RemoteScreenState extends State<RemoteScreen> {
   final SamsungTVService _tv = SamsungTVService();
   bool _connected = false;
+  bool _scanning = false;
+  List<String> _foundTVs = [];
   final String _connectedName = 'Living Room TV';
 
   // --- Ads Variables ---
@@ -424,7 +426,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: _blue,
-                boxShadow: [BoxShadow(color: _blue.withOpacity(0.4), blurRadius: 20, spreadRadius: 2)],
+                boxShadow: [BoxShadow(color: _blue.withValues(alpha: 0.4), blurRadius: 20, spreadRadius: 2)],
               ),
               child: const Center(
                 child: Text('OK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
@@ -478,7 +480,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
       decoration: BoxDecoration(
-        color: _card.withOpacity(0.5),
+        color: _card.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: _border),
       ),
@@ -542,7 +544,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
       height: 50,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
-        color: _card.withOpacity(0.2),
+        color: _card.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(8),
       ),
     );
