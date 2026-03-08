@@ -1,0 +1,425 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../services/samsung_tv_service.dart';
+
+class RemoteScreen extends StatefulWidget {
+  const RemoteScreen({super.key});
+
+  @override
+  State<RemoteScreen> createState() => _RemoteScreenState();
+}
+
+class _RemoteScreenState extends State<RemoteScreen> {
+  final SamsungTVService _tv = SamsungTVService();
+  bool _connected = false;
+  bool _scanning = false;
+  List<String> _foundTVs = [];
+  String _connectedIP = '';
+  String _connectedName = 'Living Room TV';
+
+  static const _bg = Color(0xFF101722);
+  static const _card = Color(0xFF1a2235);
+  static const _blue = Color(0xFF0d69f2);
+  static const _border = Color(0xFF2a3a55);
+
+  @override
+  void initState() {
+    super.initState();
+    _tv.onConnectionChanged = (v) => setState(() => _connected = v);
+  }
+
+  @override
+  void dispose() {
+    _tv.disconnect();
+    super.dispose();
+  }
+
+  Future<void> _scan() async {
+    setState(() { _scanning = true; _foundTVs = []; });
+    final tvs = await SamsungTVService.scanForTVs();
+    setState(() { _scanning = false; _foundTVs = tvs; });
+    if (tvs.isNotEmpty) _showTVList(tvs);
+    else _showManualIP();
+  }
+
+  void _showTVList(List<String> tvs) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.all(20),
+        children: [
+          const Text('TVs Found', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          ...tvs.map((ip) => ListTile(
+            leading: const Icon(Icons.tv, color: Color(0xFF0d69f2)),
+            title: Text(ip, style: const TextStyle(color: Colors.white)),
+            onTap: () { Navigator.pop(context); _connectTo(ip); },
+          )),
+        ],
+      ),
+    );
+  }
+
+  void _showManualIP() {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: _card,
+        title: const Text('Enter TV IP', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: ctrl,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: '192.168.1.100',
+            hintStyle: TextStyle(color: Colors.grey),
+            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF0d69f2))),
+          ),
+          keyboardType: TextInputType.number,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () { Navigator.pop(context); _connectTo(ctrl.text.trim()); },
+            child: const Text('Connect', style: TextStyle(color: Color(0xFF0d69f2))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _connectTo(String ip) async {
+    setState(() { _connectedIP = ip; });
+    final ok = await _tv.connect(ip);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to connect to $ip'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _key(String key) {
+    HapticFeedback.lightImpact();
+    _tv.sendKey(key);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _bg,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 8),
+                    _buildNavButtons(),
+                    const SizedBox(height: 28),
+                    _buildDPad(),
+                    const SizedBox(height: 28),
+                    _buildVolumeChannel(),
+                    const SizedBox(height: 28),
+                    _buildStreamingButtons(),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            ),
+            _buildAdBanner(),
+            _buildBottomNav(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Column(
+        children: [
+          // Connection status pill
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: (_connected ? _blue : Colors.grey).withOpacity(0.12),
+              borderRadius: BorderRadius.circular(100),
+              border: Border.all(
+                color: (_connected ? _blue : Colors.grey).withOpacity(0.3),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.wifi, color: _connected ? _blue : Colors.grey, size: 14),
+                const SizedBox(width: 6),
+                Text(
+                  _connected ? 'Connected: $_connectedName' : 'Not Connected',
+                  style: TextStyle(
+                    color: _connected ? _blue : Colors.grey,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _iconBtn(Icons.menu, () => _scan()),
+              const Expanded(
+                child: Text('Samsung Smart TV',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              _iconBtn(Icons.power_settings_new, () => _key('KEY_POWER')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _iconBtn(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: _card,
+          borderRadius: BorderRadius.circular(100),
+        ),
+        child: Icon(icon, color: Colors.grey[400], size: 22),
+      ),
+    );
+  }
+
+  Widget _buildNavButtons() {
+    final btns = [
+      (Icons.arrow_back, 'Back', 'KEY_RETURN'),
+      (Icons.home, 'Home', 'KEY_HOME'),
+      (Icons.settings, 'Input', 'KEY_SOURCE'),
+    ];
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: btns.map((b) => _navBtn(b.$1, b.$2, b.$3)).toList(),
+    );
+  }
+
+  Widget _navBtn(IconData icon, String label, String key) {
+    return GestureDetector(
+      onTap: () => _key(key),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: _card,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _border),
+            ),
+            child: Icon(icon, color: Colors.grey[300], size: 22),
+          ),
+          const SizedBox(height: 6),
+          Text(label, style: TextStyle(color: Colors.grey[500], fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.8)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDPad() {
+    return SizedBox(
+      width: 240,
+      height: 240,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Outer ring
+          Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _card.withOpacity(0.3),
+              border: Border.all(color: _border, width: 3),
+            ),
+          ),
+          // Up
+          Positioned(top: 8, child: _dpadBtn(Icons.keyboard_arrow_up, 'KEY_UP')),
+          // Down
+          Positioned(bottom: 8, child: _dpadBtn(Icons.keyboard_arrow_down, 'KEY_DOWN')),
+          // Left
+          Positioned(left: 8, child: _dpadBtn(Icons.keyboard_arrow_left, 'KEY_LEFT')),
+          // Right
+          Positioned(right: 8, child: _dpadBtn(Icons.keyboard_arrow_right, 'KEY_RIGHT')),
+          // OK center
+          GestureDetector(
+            onTap: () => _key('KEY_ENTER'),
+            child: Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _blue,
+                boxShadow: [BoxShadow(color: _blue.withOpacity(0.4), blurRadius: 20, spreadRadius: 2)],
+              ),
+              child: const Center(
+                child: Text('OK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dpadBtn(IconData icon, String key) {
+    return GestureDetector(
+      onTap: () => _key(key),
+      child: Container(
+        width: 56,
+        height: 48,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: Colors.transparent,
+        ),
+        child: Icon(icon, color: Colors.white, size: 32),
+      ),
+    );
+  }
+
+  Widget _buildVolumeChannel() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        _verticalControl('VOL', Icons.add, Icons.remove, 'KEY_VOLUP', 'KEY_VOLDOWN'),
+        GestureDetector(
+          onTap: () => _key('KEY_MUTE'),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _card,
+              border: Border.all(color: _border),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 12)],
+            ),
+            child: const Icon(Icons.mic, color: _blue, size: 28),
+          ),
+        ),
+        _verticalControl('CH', Icons.expand_less, Icons.expand_more, 'KEY_CHUP', 'KEY_CHDOWN'),
+      ],
+    );
+  }
+
+  Widget _verticalControl(String label, IconData up, IconData down, String keyUp, String keyDown) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+      decoration: BoxDecoration(
+        color: _card.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        children: [
+          GestureDetector(
+            onTap: () => _key(keyUp),
+            child: Padding(padding: const EdgeInsets.all(12), child: Icon(up, color: Colors.white, size: 22)),
+          ),
+          Text(label, style: TextStyle(color: Colors.grey[500], fontSize: 10, fontWeight: FontWeight.bold)),
+          GestureDetector(
+            onTap: () => _key(keyDown),
+            child: Padding(padding: const EdgeInsets.all(12), child: Icon(down, color: Colors.white, size: 22)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStreamingButtons() {
+    return Row(
+      children: [
+        Expanded(child: _streamBtn('NETFLIX', const Color(0xFFE50914), Colors.white, 'KEY_NETFLIX')),
+        const SizedBox(width: 10),
+        Expanded(child: _streamBtn('YouTube', Colors.white, const Color(0xFFFF0000), 'KEY_YOUTUBE')),
+        const SizedBox(width: 10),
+        Expanded(child: _streamBtn('Disney+', const Color(0xFF0063e5), Colors.white, 'KEY_DISNEYPLUS')),
+      ],
+    );
+  }
+
+  Widget _streamBtn(String label, Color bg, Color text, String key) {
+    return GestureDetector(
+      onTap: () => _key(key),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: bg.withOpacity(0.3), blurRadius: 8)],
+        ),
+        child: Center(
+          child: Text(label, style: TextStyle(color: text, fontWeight: FontWeight.bold, fontSize: 13)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdBanner() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: _card.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _border.withOpacity(0.5), style: BorderStyle.solid),
+      ),
+      child: Center(
+        child: Text('Sponsored Content',
+          style: TextStyle(color: Colors.grey[600], fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+      ),
+    );
+  }
+
+  Widget _buildBottomNav() {
+    return Container(
+      decoration: BoxDecoration(
+        color: _bg.withOpacity(0.9),
+        border: Border(top: BorderSide(color: _border)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _bottomNavItem(Icons.settings_remote, 'Remote', true),
+          _bottomNavItem(Icons.grid_view, 'Apps', false),
+          _bottomNavItem(Icons.search, 'Search', false),
+          _bottomNavItem(Icons.keyboard, 'Input', false),
+        ],
+      ),
+    );
+  }
+
+  Widget _bottomNavItem(IconData icon, String label, bool active) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: active ? _blue : Colors.grey[500], size: 22),
+        const SizedBox(height: 2),
+        Text(label, style: TextStyle(color: active ? _blue : Colors.grey[500], fontSize: 10, fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
+}
